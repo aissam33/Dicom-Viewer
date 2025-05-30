@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced DICOM Viewer (Minimal Core)</title>
+    <!-- Ensure dicomParser is loaded first -->
+    <script src="https://cdn.jsdelivr.net/npm/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2c3e50;
+            --light-color: #ecf0f1;
+            --dark-color: #34495e;
+            --text-light: #bdc3c7;
+            --shadow: 0 2px 10px rgba(0,0,0,0.1);
+            --active-color: #2ecc71; 
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex; 
+            min-height: 100vh;
+            overflow: hidden; 
+        }
+        
+        .container {
+            display: flex;
+            width: 100vw; 
+            height: 100vh; 
+            overflow: hidden;
+        }
+        
+        .metadata-panel {
+            width: 360px; 
+            background-color: var(--secondary-color);
+            color: white;
+            overflow-y: auto;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .image-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #fff;
+            overflow: hidden;
+        }
+        
+        .image-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #000;
+            position: relative;
+            overflow: hidden; 
+            border: 2px dashed transparent; 
+            transition: border-color 0.3s;
+        }
+        .image-container.dragover {
+            border-color: var(--primary-color);
+        }
+        
+        #dicom-canvas {
+           
+            image-rendering: pixelated; 
+            transition: transform 0.1s ease-out;
+            display: block; 
+        }
+        
+        .controls-panel {
+            padding: 12px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #ddd;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px; 
+            align-items: center;
+        }
+        
+        button {
+            padding: 7px 14px; 
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px; /* Slightly smaller font */
+            transition: background-color 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:active {
+            background-color: #2577ab;
+        }
+        
+        button.active {
+            background-color: var(--active-color);
+        }
+        button.active:hover {
+            background-color: #27ae60;
+        }
+        
+        button.secondary {
+            background-color: #7f8c8d;
+        }
+        button.secondary:hover {
+            background-color: #6c7a7d;
+        }
+        
+        button.danger {
+            background-color: #e74c3c;
+        }
+        button.danger:hover {
+            background-color: #c0392b;
+        }
+        
+        .section {
+            margin-bottom: 20px;
+        }
+        
+        h2 {
+            color: var(--light-color);
+            border-bottom: 1px solid #7f8c8d;
+            padding-bottom: 8px;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        
+        h3 {
+            color: var(--light-color);
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 1.05rem;
+        }
+        
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: 1fr; 
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .metadata-item {
+            padding: 8px;
+            background-color: var(--dark-color);
+            border-radius: 4px;
+            word-break: break-word;
+        }
+        
+        .metadata-label {
+            font-weight: bold;
+            color: var(--light-color);
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            display: block;
+        }
+        
+        .metadata-value {
+            color: var(--text-light);
+            font-size: 0.9rem;
+        }
+        
+        .dicom-tags-container {
+            max-height: 220px; 
+            overflow-y: auto;
+            border: 1px solid #3d4b5d;
+            border-radius: 4px;
+            background-color: var(--dark-color);
+        }
+        
+        .tag-item {
+            padding: 6px 10px;
+            border-bottom: 1px solid #4a5a6d;
+            font-size: 0.8rem;
+        }
+        .tag-item:last-child { border-bottom: none; }
+        .tag-name { font-weight: bold; color: var(--light-color); }
+        .tag-value { color: var(--text-light); margin-top: 2px; word-break: break-all; }
+        
+        .slider-container { margin: 12px 0; }
+        .slider-container label { display: block; margin-bottom: 5px; color: var(--light-color); font-size: 0.9rem; }
+        
+        .slider {
+            width: 100%;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #3d4b5d;
+            outline: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--primary-color); cursor: pointer; }
+        .slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--primary-color); cursor: pointer; border: none; }
+        
+        .tooltip-loupe { 
+            position: absolute;
+            background-color: rgba(20, 20, 20, 0.9);
+            padding: 0; 
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+            border: 1px solid var(--primary-color);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        #loupe-canvas { display: block; } 
+        
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.75);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; color: white; font-size: 1.5rem;
+        }
+        
+        .filter-presets { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .filter-preset { padding: 5px 10px; background-color: #3d4b5d; border-radius: 4px; font-size: 0.8rem; cursor: pointer; color: var(--light-color); }
+        .filter-preset:hover { background-color: #4a5a6d; }
+        
+        .pixel-info {
+            position: absolute; bottom: 10px; left: 10px;
+            background-color: rgba(0, 0, 0, 0.7); color: white;
+            padding: 5px 10px; border-radius: 4px; font-size: 12px;
+            z-index: 50;
+        }
+        #drop-instructions {
+            position: absolute; color: #777; font-size: 1.3em; text-align: center;
+            pointer-events: none;
+            max-width: 80%;
+        }
+
+        /* Scrollbar styling for metadata panel */
+        .metadata-panel::-webkit-scrollbar, .dicom-tags-container::-webkit-scrollbar { width: 8px; }
+        .metadata-panel::-webkit-scrollbar-track, .dicom-tags-container::-webkit-scrollbar-track { background: var(--dark-color); border-radius: 4px; }
+        .metadata-panel::-webkit-scrollbar-thumb, .dicom-tags-container::-webkit-scrollbar-thumb { background: var(--primary-color); border-radius: 4px; }
+        .metadata-panel::-webkit-scrollbar-thumb:hover, .dicom-tags-container::-webkit-scrollbar-thumb:hover { background: #2980b9; }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="metadata-panel">
+            <div class="section">
+                <h2>Métadonnées DICOM</h2>
+                <div class="metadata-grid">
+                    <div class="metadata-item">
+                        <div class="metadata-label">Nom du Patient</div>
+                        <div class="metadata-value" id="meta-patient-name">-</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">ID du Patient</div>
+                        <div class="metadata-value" id="meta-patient-id">-</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Date de l'Étude</div>
+                        <div class="metadata-value" id="meta-study-date">-</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Modalité</div>
+                        <div class="metadata-value" id="meta-modality">-</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Taille de l'Image</div>
+                        <div class="metadata-value" id="meta-image-size">-</div>
+                    </div>
+                    <div class="metadata-item">
+                        <div class="metadata-label">Fenêtre DICOM (C/W)</div>
+                        <div class="metadata-value" id="meta-dicom-window">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Tags DICOM</h3>
+                <div class="dicom-tags-container" id="dicom-tags">
+                    <div class="tag-item"><div class="tag-name">Aucun fichier chargé</div></div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Infos Pixel</h3>
+                <div class="metadata-item">
+                    <div class="metadata-label">Détails</div>
+                    <div class="metadata-value" id="pixel-data-info">-</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Niveau de Fenêtre</h3>
+                <div class="slider-container">
+                    <label for="window-level">Centre (WC): <span id="window-level-value">0</span></label>
+                    <input type="range" id="window-level-slider" class="slider" min="-2000" max="2000" value="0" step="1">
+                </div>
+                <div class="slider-container">
+                    <label for="window-width">Largeur (WW): <span id="window-width-value">4000</span></label>
+                    <input type="range" id="window-width-slider" class="slider" min="1" max="5000" value="4000" step="1">
+                </div>
+                <button id="reset-window-btn">Réinit. Fenêtre (DICOM)</button>
+            </div>
+            
+            <div class="section">
+                <h3>Filtres d'Image</h3>
+                <div class="slider-container">
+                    <label for="brightness">Luminosité : <span id="brightness-value">0</span></label>
+                    <input type="range" id="brightness-slider" class="slider" min="-100" max="100" value="0" step="1">
+                </div>
+                <div class="slider-container">
+                    <label for="contrast">Contraste : <span id="contrast-value">100</span></label>
+                    <input type="range" id="contrast-slider" class="slider" min="0" max="200" value="100" step="1">
+                </div>
+                <div class="filter-presets">
+                    <div class="filter-preset" data-brightness="0" data-contrast="100">Normal</div>
+                    <div class="filter-preset" data-brightness="20" data-contrast="120">Lumineux</div>
+                    <div class="filter-preset" data-brightness="-20" data-contrast="80">Sombre</div>
+                    <div class="filter-preset" data-brightness="0" data-contrast="150">Contraste Élevé</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="image-panel">
+            <div class="image-container" id="image-drop-container">
+                <canvas id="dicom-canvas"></canvas>
+                <div class="pixel-info" id="pixel-info-display">X: -, Y: -, Val: -</div>
+                <div class="tooltip-loupe" id="loupe-tooltip-el">
+                     <canvas id="loupe-canvas"></canvas>
+                </div>
+                <div id="drop-instructions">
+                    Glissez-déposez un fichier DICOM ici <br>ou utilisez le bouton "Ouvrir Fichier"
+                </div>
+            </div>
+            
+            <div class="controls-panel">
+                <button id="open-file-btn">Ouvrir Fichier</button>
+                <button id="zoom-in-btn">Zoom Avant (+)</button>
+                <button id="zoom-out-btn">Zoom Arrière (-)</button>
+                <button id="zoom-reset-btn">Réinit. Zoom</button>
+                <button id="pan-mode-btn">Mode Panoramique</button>
+                <button id="invert-colors-btn">Inverser Couleurs</button>
+                <button id="rotate-cw-btn">Rotation Horaire</button>
+                <button id="rotate-ccw-btn">Rotation Anti-horaire</button>
+                <button id="flip-h-btn">Flip Horizontal</button>
+                <button id="flip-v-btn">Flip Vertical</button>
+                <button id="reset-all-btn" class="danger">Tout Réinitialiser</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="loading-overlay" id="loading-overlay-el" style="display: none;">
+        <div>Chargement du fichier DICOM...</div>
+    </div>
+    
+    <input type="file" id="file-upload-input" accept=".dcm,image/dicom" style="display: none;">
+    
+    <script>
+    // Wrap the entire script in a check for dicomParser to be loaded
+    // This is a common pattern for scripts that depend on external libraries loaded via <script> tags
+    function onDicomParserLoaded() {
+        // --- DOM Elements ---
+        const canvas = document.getElementById('dicom-canvas');
+        const ctx = canvas.getContext('2d');
+        const loupeCanvas = document.getElementById('loupe-canvas');
+        const loupeCtx = loupeCanvas.getContext('2d');
+
+        const fileUploadInput = document.getElementById('file-upload-input');
+        const openFileBtn = document.getElementById('open-file-btn');
+        const imageDropContainer = document.getElementById('image-drop-container');
+        const dropInstructionsEl = document.getElementById('drop-instructions');
+        const loadingOverlayEl = document.getElementById('loading-overlay-el');
+        
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        const zoomResetBtn = document.getElementById('zoom-reset-btn');
+        const panModeBtn = document.getElementById('pan-mode-btn');
+        const invertColorsBtn = document.getElementById('invert-colors-btn');
+        const rotateCwBtn = document.getElementById('rotate-cw-btn');
+        const rotateCcwBtn = document.getElementById('rotate-ccw-btn');
+        const flipHBtn = document.getElementById('flip-h-btn');
+        const flipVBtn = document.getElementById('flip-v-btn');
+        const resetAllBtn = document.getElementById('reset-all-btn');
+
+        const windowLevelSlider = document.getElementById('window-level-slider');
+        const windowWidthSlider = document.getElementById('window-width-slider');
+        const windowLevelValueEl = document.getElementById('window-level-value');
+        const windowWidthValueEl = document.getElementById('window-width-value');
+        const resetWindowBtn = document.getElementById('reset-window-btn');
+        
+        const brightnessSlider = document.getElementById('brightness-slider');
+        const contrastSlider = document.getElementById('contrast-slider');
+        const brightnessValueEl = document.getElementById('brightness-value');
+        const contrastValueEl = document.getElementById('contrast-value');
+        const filterPresets = document.querySelectorAll('.filter-preset');
+        
+        const pixelInfoDisplayEl = document.getElementById('pixel-info-display');
+        const loupeTooltipEl = document.getElementById('loupe-tooltip-el');
+
+        // Metadata Paaanelll
+        const metaPatientNameEl = document.getElementById('meta-patient-name');
+        const metaPatientIdEl = document.getElementById('meta-patient-id');
+        const metaStudyDateEl = document.getElementById('meta-study-date');
+        const metaModalityEl = document.getElementById('meta-modality');
+        const metaImageSizeEl = document.getElementById('meta-image-size');
+        const metaDicomWindowEl = document.getElementById('meta-dicom-window');
+        const dicomTagsContainerEl = document.getElementById('dicom-tags');
+        const pixelDataInfoEl = document.getElementById('pixel-data-info');
+
+        // ----------------------------------------------------
+        let dicomDataSet = null;      
+        let rawPixelData = null;      
+        
+        let imageRows = 0;
+        let imageColumns = 0;
+        let bitsStored = 16;
+        let pixelRepresentation = 0;  
+        let rescaleIntercept = 0;
+        let rescaleSlope = 1;
+        let photometricInterpretation = 'MONOCHROME2';
+        let dicomWindowCenter = 0;    // WC du fichiiier DICOM 
+        let dicomWindowWidth = 4000;  // WW du fichier dcm
+
+        
+        let currentWindowCenter = 0;
+        let currentWindowWidth = 4000;
+        let currentBrightness = 0;    
+        let currentContrast = 100;    
+        let isUserInverted = false;   
+
+       
+        let currentScale = 1.0;
+        let panX = 0;
+        let panY = 0;
+        let isPanModeActive = false;
+        let panStartX, panStartY;     // For calculating pan delta
+        let currentRotation = 0;      // In degrees
+        let isFlippedH = false;
+        let isFlippedV = false;
+
+        // Loupe configuration
+        const LOUPE_CANVAS_SIZE = 128; 
+        const LOUPE_GRID_PIXELS = 9;   
+
+        // --- Initialization ---
+        function init() {
+            loupeCanvas.width = LOUPE_CANVAS_SIZE;
+            loupeCanvas.height = LOUPE_CANVAS_SIZE;
+            setupEventListeners();
+            updateAllUIDisplays();
+            resetCanvasToPlaceholder();
+        }
+
+        function setupEventListeners() {
+            openFileBtn.addEventListener('click', () => fileUploadInput.click());
+            fileUploadInput.addEventListener('change', handleFileSelectEvent);
+
+            imageDropContainer.addEventListener('dragover', handleDragOver);
+            imageDropContainer.addEventListener('dragleave', handleDragLeave);
+            imageDropContainer.addEventListener('drop', handleDrop);
+
+            zoomInBtn.addEventListener('click', () => applyZoom(1.2));
+            zoomOutBtn.addEventListener('click', () => applyZoom(0.8));
+            zoomResetBtn.addEventListener('click', resetZoomAndPan);
+            panModeBtn.addEventListener('click', togglePanMode);
+            
+            invertColorsBtn.addEventListener('click', toggleUserColorInversion);
+            rotateCwBtn.addEventListener('click', () => applyRotation(90));
+            rotateCcwBtn.addEventListener('click', () => applyRotation(-90));
+            flipHBtn.addEventListener('click', () => toggleFlip('horizontal'));
+            flipVBtn.addEventListener('click', () => toggleFlip('vertical'));
+            resetAllBtn.addEventListener('click', fullResetInteraction);
+            
+            windowLevelSlider.addEventListener('input', () => {
+                currentWindowCenter = parseFloat(windowLevelSlider.value);
+                updateAllUIDisplays();
+                renderActiveDicomImage();
+            });
+            windowWidthSlider.addEventListener('input', () => {
+                currentWindowWidth = parseFloat(windowWidthSlider.value);
+                if (currentWindowWidth < 1) currentWindowWidth = 1;
+                updateAllUIDisplays();
+                renderActiveDicomImage();
+            });
+            resetWindowBtn.addEventListener('click', resetWindowToDicomDefault);
+            
+            brightnessSlider.addEventListener('input', () => {
+                currentBrightness = parseInt(brightnessSlider.value);
+                updateAllUIDisplays();
+                renderActiveDicomImage();
+            });
+            contrastSlider.addEventListener('input', () => {
+                currentContrast = parseInt(contrastSlider.value);
+                updateAllUIDisplays();
+                renderActiveDicomImage();
+            });
+            filterPresets.forEach(preset => preset.addEventListener('click', applyFilterPreset));
+            
+            canvas.addEventListener('mousedown', handleCanvasMouseDown);
+            canvas.addEventListener('mousemove', handleCanvasMouseMove);
+            canvas.addEventListener('mouseup', handleCanvasMouseUpOrLeave);
+            canvas.addEventListener('mouseleave', handleCanvasMouseUpOrLeave);
+            canvas.addEventListener('wheel', handleCanvasWheel, { passive: false });
+        }
+
+        // --- File Handling & Parsing (Core from Minimal Example) ---
+        function handleFileSelectEvent(event) {
+            const file = event.target.files[0];
+            if (file) {
+                processDicomFile(file);
+            }
+            fileUploadInput.value = null; // Reset file input to allow re-selection of the same file
+        }
+
+        function processDicomFile(file) {
+            loadingOverlayEl.style.display = 'flex';
+            dropInstructionsEl.style.display = 'none'; // Hide drop instructions
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const byteArray = new Uint8Array(arrayBuffer);
+                    
+                    // Explicitly use window.dicomParser here
+                    if (!window.dicomParser || typeof window.dicomParser.parseDicom !== 'function') {
+                        throw new Error("dicomParser library not correctly loaded or parseDicom function is missing.");
+                    }
+                    dicomDataSet = window.dicomParser.parseDicom(byteArray);
+                    
+                    extractEssentialDicomData(); // Extract data needed for rendering and info
+                    populateMetadataPanel();     // Update the metadata display
+                    displayFullDicomTags();      // Show all tags
+                    
+                    resetAllInteractionsToDefault(); // Reset zoom, pan, filters for the new image
+                    renderActiveDicomImage();        // Render the new image
+
+                } catch (error) {
+                    console.error('Error processing DICOM file:', error);
+                    alert(`Failed to process DICOM file: ${error.message}. Is it a valid DICOM file?`);
+                    resetUIForNoImage();
+                } finally {
+                    loadingOverlayEl.style.display = 'none';
+                }
+            };
+            reader.onerror = () => {
+                alert('Error reading file.');
+                loadingOverlayEl.style.display = 'none';
+                resetUIForNoImage();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function extractEssentialDicomData() {
+            if (!dicomDataSet) return;
+
+            imageRows = dicomDataSet.uint16('x00280010') || 0;
+            imageColumns = dicomDataSet.uint16('x00280011') || 0;
+            bitsStored = dicomDataSet.uint16('x00280101') || 16; // Default to 16 if not found
+            pixelRepresentation = dicomDataSet.uint16('x00280103') || 0; // 0 for unsigned
+            rescaleIntercept = parseFloat(dicomDataSet.string('x00281052') || '0');
+            rescaleSlope = parseFloat(dicomDataSet.string('x00281053') || '1');
+            photometricInterpretation = (dicomDataSet.string('x00280004') || 'MONOCHROME2').trim();
+
+            // Window Center (WC) and Window Width (WW)
+            let wcStr = dicomDataSet.string('x00281050');
+            let wwStr = dicomDataSet.string('x00281051');
+            dicomWindowCenter = wcStr ? parseFloat(wcStr.split('\\')[0]) : null; // Take first value if multiple
+            dicomWindowWidth = wwStr ? parseFloat(wwStr.split('\\')[0]) : null;
+
+            // Extract raw pixel data before calculating default windowing if necessary
+            const pixelDataElement = dicomDataSet.elements.x7fe00010;
+            if (!pixelDataElement) {
+                throw new Error('Pixel data (x7fe00010) not found in DICOM file.');
+            }
+            rawPixelData = new Uint8Array(dicomDataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
+            
+            // If WC/WW are not in DICOM, calculate a basic default
+            if (dicomWindowCenter === null || dicomWindowWidth === null || dicomWindowWidth < 1) {
+                calculateDefaultWindowing(); // This function now assumes rawPixelData is available
+            }
+            
+            // Initialize current windowing with DICOM (or calculated) values
+            currentWindowCenter = dicomWindowCenter;
+            currentWindowWidth = dicomWindowWidth;
+        }
+        
+        function calculateDefaultWindowing() {
+            // Fallback if WC/WW not present or invalid
+            let minPixel = Infinity, maxPixel = -Infinity;
+            // rawPixelData should be populated before this is called if WC/WW are missing
+            if (rawPixelData && imageRows > 0 && imageColumns > 0) { 
+                const numPixels = imageRows * imageColumns;
+                for (let i = 0; i < numPixels; i++) {
+                    let val = getRawPixelValueFromArray(rawPixelData, i, bitsStored, pixelRepresentation);
+                    val = val * rescaleSlope + rescaleIntercept; // Apply rescale
+                    minPixel = Math.min(minPixel, val);
+                    maxPixel = Math.max(maxPixel, val);
+                }
+            }
+
+            if (isFinite(minPixel) && isFinite(maxPixel) && maxPixel > minPixel) {
+                dicomWindowCenter = (maxPixel + minPixel) / 2;
+                dicomWindowWidth = maxPixel - minPixel;
+            } else { // Absolute fallback
+                dicomWindowCenter = (bitsStored === 8) ? 128 : (pixelRepresentation === 1 ? 0 : Math.pow(2, bitsStored -1) / 2);
+                dicomWindowWidth = Math.pow(2, bitsStored);
+            }
+             if (dicomWindowWidth < 1) dicomWindowWidth = 1;
+        }
+
+        // --- Image Rendering (Core from Minimal Example, adapted) ---
+        function renderActiveDicomImage() {
+            if (!dicomDataSet || !rawPixelData) {
+                resetCanvasToPlaceholder();
+                return;
+            }
+
+            canvas.width = imageColumns;
+            canvas.height = imageRows;
+            
+            const imageData = ctx.createImageData(imageColumns, imageRows);
+            const data = imageData.data; // Uint8ClampedArray: R,G,B,A values
+
+            const wc = currentWindowCenter;
+            const ww = currentWindowWidth;
+            const lowerBound = wc - ww / 2.0;
+            const upperBound = wc + ww / 2.0;
+            const contrastFactor = currentContrast / 100.0;
+
+            for (let i = 0; i < imageRows * imageColumns; i++) {
+                let rawValue = getRawPixelValueFromArray(rawPixelData, i, bitsStored, pixelRepresentation);
+                let hounsfieldValue = rawValue * rescaleSlope + rescaleIntercept;
+
+                // 1. Apply windowing
+                let displayValue = 0;
+                if (hounsfieldValue <= lowerBound) {
+                    displayValue = 0;
+                } else if (hounsfieldValue >= upperBound) {
+                    displayValue = 255;
+                } else {
+                    displayValue = ((hounsfieldValue - lowerBound) / ww) * 255.0;
+                }
+
+                // 2. Apply brightness & contrast
+                displayValue = (displayValue - 127.5) * contrastFactor + 127.5 + currentBrightness;
+                displayValue = Math.max(0, Math.min(255, displayValue)); // Clamp
+
+                // 3. Handle Photometric Interpretation (MONOCHROME1 is inverted)
+                if (photometricInterpretation === 'MONOCHROME1') {
+                    displayValue = 255 - displayValue;
+                }
+
+                // 4. Handle user-toggled color inversion
+                if (isUserInverted) {
+                    displayValue = 255 - displayValue;
+                }
+                
+                const pixelArrayIndex = i * 4;
+                data[pixelArrayIndex] = displayValue;     // Red
+                data[pixelArrayIndex + 1] = displayValue; // Green
+                data[pixelArrayIndex + 2] = displayValue; // Blue
+                data[pixelArrayIndex + 3] = 255;          // Alpha (fully opaque)
+            }
+            ctx.putImageData(imageData, 0, 0);
+            applyCanvasTransformations(); // Apply zoom, pan, rotation, flip
+        }
+
+        // Helper to get raw pixel value (from Minimal Example)
+        function getRawPixelValueFromArray(pixelDataArray, index, bStored, pRepresentation) {
+            let value;
+            const bytesPerPixel = bStored <= 8 ? 1 : 2;
+            const byteOffset = index * bytesPerPixel;
+
+            if (bStored <= 8) {
+                value = pixelDataArray[byteOffset];
+            } else { // Assuming 16-bit or similar stored in 2 bytes (DICOM is Little Endian)
+                value = pixelDataArray[byteOffset] + (pixelDataArray[byteOffset + 1] << 8);
+            }
+
+            // Handle signed pixel representation if needed
+            if (pRepresentation === 1) { // 1 = signed
+                const signBit = 1 << (bStored - 1);
+                if (value & signBit) { // If sign bit is set, it's a negative number in two's complement
+                    value = value | (~0 << bStored); // Sign-extend to JS's 32-bit signed integers
+                }
+            }
+            return value;
+        }
+
+        // --- UI Updates & Metadata Display ---
+        function updateAllUIDisplays() {
+            windowLevelValueEl.textContent = currentWindowCenter.toFixed(0);
+            windowWidthValueEl.textContent = currentWindowWidth.toFixed(0);
+            windowLevelSlider.value = currentWindowCenter;
+            windowWidthSlider.value = currentWindowWidth;
+
+            brightnessValueEl.textContent = currentBrightness;
+            contrastValueEl.textContent = currentContrast;
+            brightnessSlider.value = currentBrightness;
+            contrastSlider.value = currentContrast;
+        }
+
+        function populateMetadataPanel() {
+            if (!dicomDataSet) return;
+            metaPatientNameEl.textContent = dicomDataSet.string('x00100010') || 'N/A';
+            metaPatientIdEl.textContent = dicomDataSet.string('x00100020') || 'N/A';
+            metaStudyDateEl.textContent = dicomDataSet.string('x00080020') || 'N/A';
+            metaModalityEl.textContent = dicomDataSet.string('x00080060') || 'N/A';
+            metaImageSizeEl.textContent = `${imageColumns} × ${imageRows}`;
+            metaDicomWindowEl.textContent = `${dicomWindowCenter.toFixed(0)} / ${dicomWindowWidth.toFixed(0)}`;
+            
+            const bitsAllocated = dicomDataSet.uint16('x00280100') || bitsStored;
+            pixelDataInfoEl.textContent = 
+                `${bitsAllocated}b alloc, ${bitsStored}b stored, ${pixelRepresentation === 1 ? 'signed' : 'unsigned'}, RI: ${rescaleIntercept}, RS: ${rescaleSlope}`;
+        }
+
+        function displayFullDicomTags() {
+            dicomTagsContainerEl.innerHTML = '';
+            if (!dicomDataSet || !dicomDataSet.elements) {
+                dicomTagsContainerEl.innerHTML = '<div class="tag-item"><div class="tag-name">No DICOM data loaded</div></div>';
+                return;
+            }
+
+            // Defensive check for dicomParser and its dictionary
+            if (!window.dicomParser || !window.dicomParser.dictionary || typeof window.dicomParser.dictionary.keywordOf !== 'function') {
+                console.error("dicomParser.dictionary.keywordOf is not available. Cannot display tag names.");
+                dicomTagsContainerEl.innerHTML = '<div class="tag-item"><div class="tag-name">Error: DICOM dictionary unavailable.</div></div>';
+                return;
+            }
+
+            for (const tag in dicomDataSet.elements) {
+                if (tag === 'x7fe00010') continue; // Skip pixel data itself
+
+                const element = dicomDataSet.elements[tag];
+                // Use the now confirmed window.dicomParser
+                const tagName = window.dicomParser.dictionary.keywordOf(tag) || 'Unknown Tag';
+                let value = dicomDataSet.string(tag); 
+                if (value === undefined || value.length > 128 || (typeof value === 'string' && value.includes('\u0000'))) {
+                     value = `VR: ${element.vr}, Length: ${element.length} (Binary or Too Long)`;
+                }
+                value = value.replace(/</g, "<").replace(/>/g, ">");
+
+                const tagItem = document.createElement('div');
+                tagItem.className = 'tag-item';
+                tagItem.innerHTML = `
+                    <div class="tag-name">${tagName} (${formatDicomTagId(tag)})</div>
+                    <div class="tag-value">${value}</div>`;
+                dicomTagsContainerEl.appendChild(tagItem);
+            }
+        }
+        function formatDicomTagId(tag) { return `(${tag.substring(1, 5)},${tag.substring(5, 9)})`; }
+
+        // ---les Transformations et Interactions ---
+        function applyCanvasTransformations() {
+            canvas.style.transformOrigin = 'center center';
+            let transform = `translate(${panX}px, ${panY}px) `;
+            transform += `scale(${currentScale}) `;
+            transform += `rotate(${currentRotation}deg) `;
+            if (isFlippedH) transform += `scaleX(-1) `;
+            if (isFlippedV) transform += `scaleY(-1) `;
+            canvas.style.transform = transform;
+        }
+
+        function applyZoom(factor, mouseClientX = null, mouseClientY = null) {
+            if (!dicomDataSet) return;
+            
+            const oldScale = currentScale;
+            currentScale *= factor;
+            currentScale = Math.max(0.1, Math.min(currentScale, 30)); 
+
+            if (mouseClientX !== null && mouseClientY !== null) { 
+                const rect = imageDropContainer.getBoundingClientRect();
+                const mouseXRelToContainer = mouseClientX - rect.left;
+                const mouseYRelToContainer = mouseClientY - rect.top;
+                panX = mouseXRelToContainer - (mouseXRelToContainer - panX) * (currentScale / oldScale);
+                panY = mouseYRelToContainer - (mouseYRelToContainer - panY) * (currentScale / oldScale);
+            } else { 
+                panX *= (currentScale / oldScale);
+                panY *= (currentScale / oldScale);
+            }
+            applyCanvasTransformations();
+        }
+
+        function resetZoomAndPan() {
+            currentScale = 1.0;
+            panX = 0;
+            panY = 0;
+            if (dicomDataSet && imageColumns > 0 && imageRows > 0) { 
+                const containerWidth = imageDropContainer.clientWidth;
+                const containerHeight = imageDropContainer.clientHeight;
+                const scaleX = containerWidth / imageColumns;
+                const scaleY = containerHeight / imageRows;
+                currentScale = Math.min(scaleX, scaleY, 1.0); 
+            }
+            applyCanvasTransformations();
+        }
+
+        function togglePanMode() {
+            isPanModeActive = !isPanModeActive;
+            panModeBtn.classList.toggle('active', isPanModeActive);
+            canvas.style.cursor = isPanModeActive ? 'grab' : 'default';
+        }
+
+        function handleCanvasMouseDown(e) {
+            if (!dicomDataSet || !isPanModeActive || e.button !== 0) return; 
+            panStartX = e.clientX - panX;
+            panStartY = e.clientY - panY;
+            canvas.style.cursor = 'grabbing';
+        }
+
+        function handleCanvasMouseMove(e) {
+            if (isPanModeActive && panStartX !== undefined) { 
+                panX = e.clientX - panStartX;
+                panY = e.clientY - panStartY;
+                applyCanvasTransformations();
+            }
+            updatePixelInfoAndLoupe(e);
+        }
+
+        function handleCanvasMouseUpOrLeave(e) {
+            if (isPanModeActive) { 
+                 panStartX = undefined; panStartY = undefined; 
+                 canvas.style.cursor = 'grab'; 
+            }
+            if (e.type === 'mouseleave') {
+                loupeTooltipEl.style.display = 'none';
+                pixelInfoDisplayEl.textContent = 'X: -, Y: -, Val: -';
+            }
+        }
+
+        function handleCanvasWheel(e) {
+            if (!dicomDataSet) return;
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 1.15 : 1 / 1.15; 
+            applyZoom(delta, e.clientX, e.clientY); 
+            updatePixelInfoAndLoupe(e); 
+        }
+        
+        function screenToImageCoordinates(clientX, clientY) {
+            if (!dicomDataSet || !canvas) return null;
+            const canvasRect = canvas.getBoundingClientRect(); 
+            let x = clientX - canvasRect.left;
+            let y = clientY - canvasRect.top;
+            x /= currentScale;
+            y /= currentScale;
+            const centerX = canvas.width / 2; 
+            const centerY = canvas.height / 2;
+            x -= centerX;
+            y -= centerY;
+            const rad = -currentRotation * Math.PI / 180; 
+            const cosVal = Math.cos(rad); // Corrected variable name
+            const sinVal = Math.sin(rad); // Corrected variable name
+            const newX = x * cosVal - y * sinVal;
+            const newY = x * sinVal + y * cosVal;
+            x = newX;
+            y = newY;
+            x += centerX;
+            y += centerY;
+            if (isFlippedH) x = canvas.width - x;
+            if (isFlippedV) y = canvas.height - y;
+            return { x: Math.floor(x), y: Math.floor(y) };
+        }
+
+        function updatePixelInfoAndLoupe(e) {
+            if (!dicomDataSet || !rawPixelData) return;
+            const coords = screenToImageCoordinates(e.clientX, e.clientY);
+            if (!coords) {
+                pixelInfoDisplayEl.textContent = `X: -, Y: -, Val: -`;
+                loupeTooltipEl.style.display = 'none';
+                return;
+            }
+            const col = coords.x;
+            const row = coords.y;
+            if (col >= 0 && col < imageColumns && row >= 0 && row < imageRows) {
+                const rawVal = getRawPixelValueFromArray(rawPixelData, row * imageColumns + col, bitsStored, pixelRepresentation);
+                const hounsfieldVal = rawVal * rescaleSlope + rescaleIntercept;
+                pixelInfoDisplayEl.textContent = `X: ${col}, Y: ${row}, Val: ${hounsfieldVal.toFixed(0)}`;
+                if (currentScale >= 1.5) { 
+                    renderLoupeOnCanvas(col, row, e.clientX, e.clientY);
+                    loupeTooltipEl.style.display = 'block';
+                } else {
+                    loupeTooltipEl.style.display = 'none';
+                }
+            } else {
+                pixelInfoDisplayEl.textContent = `X: -, Y: -, Val: -`;
+                loupeTooltipEl.style.display = 'none';
+            }
+        }
+        
+        function renderLoupeOnCanvas(centerImgCol, centerImgRow, screenX, screenY) {
+            loupeCtx.clearRect(0,0, LOUPE_CANVAS_SIZE, LOUPE_CANVAS_SIZE);
+            loupeCtx.imageSmoothingEnabled = false;
+            const pixelsPerLoupeCell = LOUPE_CANVAS_SIZE / LOUPE_GRID_PIXELS;
+            const halfGrid = Math.floor(LOUPE_GRID_PIXELS / 2);
+            for (let yOffset = 0; yOffset < LOUPE_GRID_PIXELS; yOffset++) {
+                for (let xOffset = 0; xOffset < LOUPE_GRID_PIXELS; xOffset++) {
+                    const currentImgCol = centerImgCol - halfGrid + xOffset;
+                    const currentImgRow = centerImgRow - halfGrid + yOffset;
+                    let displayVal = 128; 
+                    if (currentImgCol >= 0 && currentImgCol < imageColumns && currentImgRow >= 0 && currentImgRow < imageRows) {
+                        let rawVal = getRawPixelValueFromArray(rawPixelData, currentImgRow * imageColumns + currentImgCol, bitsStored, pixelRepresentation);
+                        let hounsfieldVal = rawVal * rescaleSlope + rescaleIntercept;
+                        const wc = currentWindowCenter;
+                        const ww = currentWindowWidth;
+                        const lower = wc - ww / 2;
+                        const upper = wc + ww / 2;
+                        const contrastFactor = currentContrast / 100.0;
+                        if (hounsfieldVal <= lower) displayVal = 0;
+                        else if (hounsfieldVal >= upper) displayVal = 255;
+                        else displayVal = ((hounsfieldVal - lower) / ww) * 255;
+                        displayVal = (displayVal - 127.5) * contrastFactor + 127.5 + currentBrightness;
+                        displayVal = Math.max(0, Math.min(255, displayVal));
+                        if (photometricInterpretation === 'MONOCHROME1') displayVal = 255 - displayVal;
+                        if (isUserInverted) displayVal = 255 - displayVal;
+                    }
+                    loupeCtx.fillStyle = `rgb(${Math.round(displayVal)},${Math.round(displayVal)},${Math.round(displayVal)})`;
+                    loupeCtx.fillRect(xOffset * pixelsPerLoupeCell, yOffset * pixelsPerLoupeCell, pixelsPerLoupeCell, pixelsPerLoupeCell);
+                }
+            }
+            loupeCtx.strokeStyle = 'red';
+            loupeCtx.lineWidth = Math.max(1, LOUPE_CANVAS_SIZE / (LOUPE_GRID_PIXELS * 25) );
+            loupeCtx.strokeRect(halfGrid * pixelsPerLoupeCell, halfGrid * pixelsPerLoupeCell, pixelsPerLoupeCell, pixelsPerLoupeCell);
+            const containerRect = imageDropContainer.getBoundingClientRect();
+            let tooltipX = screenX - containerRect.left + 20; 
+            let tooltipY = screenY - containerRect.top + 20;
+            if (tooltipX + LOUPE_CANVAS_SIZE + 10 > imageDropContainer.clientWidth) {
+                tooltipX = screenX - containerRect.left - LOUPE_CANVAS_SIZE - 20;
+            }
+            if (tooltipY + LOUPE_CANVAS_SIZE + 10 > imageDropContainer.clientHeight) {
+                tooltipY = screenY - containerRect.top - LOUPE_CANVAS_SIZE - 20;
+            }
+            loupeTooltipEl.style.left = `${tooltipX}px`;
+            loupeTooltipEl.style.top = `${tooltipY}px`;
+        }
+
+        // --- Image Manipulation Controls ---
+        function toggleUserColorInversion() {
+            if (!dicomDataSet) return;
+            isUserInverted = !isUserInverted;
+            invertColorsBtn.classList.toggle('active', isUserInverted);
+            renderActiveDicomImage();
+        }
+
+        function applyRotation(degrees) {
+            if (!dicomDataSet) return;
+            currentRotation = (currentRotation + degrees + 360) % 360; 
+            applyCanvasTransformations();
+        }
+
+        function toggleFlip(direction) {
+            if (!dicomDataSet) return;
+            if (direction === 'horizontal') {
+                isFlippedH = !isFlippedH;
+                flipHBtn.classList.toggle('active', isFlippedH);
+            } else {
+                isFlippedV = !isFlippedV;
+                flipVBtn.classList.toggle('active', isFlippedV);
+            }
+            applyCanvasTransformations();
+        }
+
+        function resetWindowToDicomDefault() {
+            if (!dicomDataSet) return;
+            currentWindowCenter = dicomWindowCenter;
+            currentWindowWidth = dicomWindowWidth;
+            updateAllUIDisplays();
+            renderActiveDicomImage();
+        }
+
+        function applyFilterPreset(e) {
+            if (!dicomDataSet) return;
+            const preset = e.target;
+            currentBrightness = parseInt(preset.dataset.brightness);
+            currentContrast = parseInt(preset.dataset.contrast);
+            updateAllUIDisplays();
+            renderActiveDicomImage();
+        }
+
+        // --- Resets ---
+        function resetAllInteractionsToDefault() {
+            currentBrightness = 0;
+            currentContrast = 100;
+            isUserInverted = false; invertColorsBtn.classList.remove('active');
+            currentRotation = 0;
+            isFlippedH = false; flipHBtn.classList.remove('active');
+            isFlippedV = false; flipVBtn.classList.remove('active');
+            isPanModeActive = false; panModeBtn.classList.remove('active');
+            canvas.style.cursor = 'default';
+            panStartX = undefined; panStartY = undefined;
+            resetZoomAndPan(); 
+            updateAllUIDisplays();
+        }
+        
+        function fullResetInteraction() {
+            if (!dicomDataSet) return;
+            currentWindowCenter = dicomWindowCenter; 
+            currentWindowWidth = dicomWindowWidth;
+            resetAllInteractionsToDefault(); 
+            renderActiveDicomImage();        
+        }
+
+        function resetCanvasToPlaceholder() {
+            const containerWidth = imageDropContainer.clientWidth || 512;
+            const containerHeight = imageDropContainer.clientHeight || 300;
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
+            ctx.fillStyle = '#111'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            currentScale = 1.0; panX = 0; panY = 0; currentRotation = 0; isFlippedH=false; isFlippedV=false;
+            applyCanvasTransformations(); 
+        }
+        
+        function resetUIForNoImage() {
+            dicomDataSet = null;
+            rawPixelData = null;
+            resetCanvasToPlaceholder();
+            dropInstructionsEl.style.display = 'block';
+            metaPatientNameEl.textContent = '-';
+            metaPatientIdEl.textContent = '-';
+            metaStudyDateEl.textContent = '-';
+            metaModalityEl.textContent = '-';
+            metaImageSizeEl.textContent = '-';
+            metaDicomWindowEl.textContent = '-';
+            pixelDataInfoEl.textContent = '-';
+            dicomTagsContainerEl.innerHTML = '<div class="tag-item"><div class="tag-name">Aucun fichier chargé</div></div>';
+            pixelInfoDisplayEl.textContent = 'X: -, Y: -, Val: -';
+            loupeTooltipEl.style.display = 'none';
+            currentWindowCenter = 0; currentWindowWidth = 4000;
+            currentBrightness = 0; currentContrast = 100;
+            isUserInverted = false; invertColorsBtn.classList.remove('active');
+            currentRotation = 0;
+            isFlippedH = false; flipHBtn.classList.remove('active');
+            isFlippedV = false; flipVBtn.classList.remove('active');
+            isPanModeActive = false; panModeBtn.classList.remove('active');
+            canvas.style.cursor = 'default';
+            resetZoomAndPan();
+            updateAllUIDisplays();
+        }
+
+        // --- Drag and Drop Handlers ---
+        function handleDragOver(e) {
+            e.preventDefault(); e.stopPropagation();
+            imageDropContainer.classList.add('dragover');
+        }
+        function handleDragLeave(e) {
+            e.preventDefault(); e.stopPropagation();
+            imageDropContainer.classList.remove('dragover');
+        }
+        function handleDrop(e) {
+            e.preventDefault(); e.stopPropagation();
+            imageDropContainer.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processDicomFile(files[0]);
+            }
+        }
+
+        // --- Start the application ---
+        init(); // Call init which is now inside onDicomParserLoaded
+    } // End of onDicomParserLoaded
+
+    // ---- Script Entry Point ----
+    // This ensures that the main script logic (onDicomParserLoaded)
+    // only runs after the DOM is ready AND dicomParser is available.
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof window.dicomParser !== 'undefined' && window.dicomParser.parseDicom) {
+            onDicomParserLoaded();
+        } else {
+            // Fallback or error if dicomParser didn't load, though the script tag should ensure it.
+            // This could happen if CDN is down or blocked.
+            console.error("DICOM Parser library not found. Viewer cannot start.");
+            alert("Error: Could not load DICOM parsing library. Please check your internet connection or ad blockers.");
+            // Optionally, you could try to load it dynamically here or set a retry.
+            // For now, just log the error.
+            const loadingOverlayEl = document.getElementById('loading-overlay-el');
+            if (loadingOverlayEl) loadingOverlayEl.style.display = 'none';
+            const dropInstructionsEl = document.getElementById('drop-instructions');
+            if(dropInstructionsEl) dropInstructionsEl.textContent = "Erreur: Librairie DICOM non chargée.";
+        }
+    });
+
+    </script>
+</body>
+</html>
