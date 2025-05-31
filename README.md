@@ -5,7 +5,7 @@
 DICOM viewer with basic medical image processing functionalities such as contrast adjustment, brightness control, zoom, and filtering. Built to assist in visualizing and enhancing medical images for diagnostic purposes.
 
 # 1. Core Features (Loading & Display):
- DICOM File Parsing Reads metadata and pixel data using dicomParser. Supports drag-and-drop and file selection via a button. Image Rendering Converts raw pixel data into a displayable image using <canvas>. Applies DICOM parameters (rescale slope/intercept, photometric interpretation).
+ DICOM File Parsing Reads metadata and pixel data using dicomParser. Supports file selection via a button. Image Rendering Converts raw pixel data into a displayable image using <canvas>.
 # 2.Image Adjustments  Windowing (Window Level/Width):
 Interactive sliders to adjust center (WC) and width (WW). Reset button to restore default DICOM values. Brightness/Contrast Sliders for fine-tuning brightness (±) and contrast (%). Quick presets (e.g., "Bright," "Dark," "High Contrast"). Color Inversion Toggle between black-on-white and white-on-black. 
 # 3. Interaction Tools  Zoom Zoom in/out (buttons or mouse wheel):
